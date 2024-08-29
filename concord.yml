@@ -1,0 +1,87 @@
+configuration:
+  runtime: "concord-v2"
+  dependencies:
+  - mvn://com.walmartlabs.concord.plugins.basic:ansible-tasks:2.14.0
+
+
+triggers:
+- declare:
+    version: 2
+    entryPoint: trigger_as3
+    conditions:
+      class: "AS3"
+
+flows:
+
+  #Name of Flow visible in Concord. This flow is specific for export automation.
+  trigger_as3:
+    #Form reference
+    # - log: "exportType= ${ExportSelection.exportType}"
+    #Export key from secrets vault to a file. Syntax is: ('Organization', 'SSH key name in secrets vault', 'required store password' )
+
+    #Display SSH key file paths for troubleshooting use. 
+    #- log: "Public: ${myKeys.public}"
+    #- log: "Private: ${myKeys.private}"
+
+    - task: ansible
+      in:
+#        auth:
+#          privateKey: 
+#            path: "${myKeys.private}"
+        config:
+          defaults:
+            host_key_checking: false
+          persistent_connection:
+            command_timeout: 420
+        #Enabling log filtering helps to remove sensitive secrets from the concord process log
+        enableLogFiltering: false
+        #Custom Docker File to run ansible from. This file uses ansible 2.9.20.
+        dockerImage: "megamattzilla/f5_ansible:2.0.0"
+        #Name of ansible playbook to call. Note: Ansible playbook could call other ansible playbooks. 
+        playbook: "playbooks/trigger_as3.yml"
+        inventoryFile: "playbooks/inventory/bigip"
+        #Verbosity controls ansible logging level. 5 is quite verbose and useful for troubleshooting. 
+        verbose: 4
+        #Passing extra vars to ansible playbook run.
+        extraVars:
+          #Lookup F5 admin password from Concord secrets vault: https://concord.walmartlabs.com/docs/plugins/crypto.html
+          f5adminpassword: "${crypto.exportAsString('Default', 'bigipAdminPassword', null)}"
+          as3_declaration: "${event}"
+          # #Pass SSH key path to ansible variable
+          # SSH_KEY_PATH: "${myKeys.private}" 
+
+  #Name of Flow visible in Concord. This flow is specific for export automation.
+  process_as3:
+    #Form reference
+    # - log: "exportType= ${ExportSelection.exportType}"
+    #Export key from secrets vault to a file. Syntax is: ('Organization', 'SSH key name in secrets vault', 'required store password' )
+
+    #Display SSH key file paths for troubleshooting use. 
+    #- log: "Public: ${myKeys.public}"
+    #- log: "Private: ${myKeys.private}"
+
+    - task: ansible
+      in:
+#        auth:
+#          privateKey: 
+#            path: "${myKeys.private}"
+        config:
+          defaults:
+            host_key_checking: false
+          persistent_connection:
+            command_timeout: 420
+        #Enabling log filtering helps to remove sensitive secrets from the concord process log
+        enableLogFiltering: false
+        #Custom Docker File to run ansible from. This file uses ansible 2.9.20.
+        dockerImage: "megamattzilla/f5_ansible:2.0.0"
+        #Name of ansible playbook to call. Note: Ansible playbook could call other ansible playbooks. 
+        playbook: "playbooks/trigger_as3.yml"
+        inventoryFile: "playbooks/inventory/bigip"
+        #Verbosity controls ansible logging level. 5 is quite verbose and useful for troubleshooting. 
+        verbose: 4
+        #Passing extra vars to ansible playbook run.
+        extraVars:
+          #Lookup F5 admin password from Concord secrets vault: https://concord.walmartlabs.com/docs/plugins/crypto.html
+          f5adminpassword: "${crypto.exportAsString('Default', 'bigipAdminPassword', null)}"
+          # #Pass SSH key path to ansible variable
+          # SSH_KEY_PATH: "${myKeys.private}" 

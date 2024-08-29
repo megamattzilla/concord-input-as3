@@ -1,0 +1,105 @@
+---
+- name: Update AS3 from github repository files
+  hosts: bigip
+  connection: local
+  vars:
+    provider:
+      server: "{{ hostvars[inventory_hostname].bigip_mgmt }}"
+      user: admin
+      password: "{{ f5adminpassword }}"
+      validate_certs: false
+      server_port: 443
+  gather_facts: false
+  any_errors_fatal: true
+## Overview:
+## Part 1: Reconstitute AS3 declaration from github repository files
+## Part 2: Post Reconstitute AS3 declaration to F5 VEs 
+  tasks:
+
+## Part 1: Reconstitute AS3 declaration from github repository files
+#    - name: clone git repo
+#      shell: git clone git@github.com:megamattzilla/concord-as3-import.git
+  
+    ## Lookup json keys for class AS3 and ADC  
+    - set_fact: "class_as3_keys={{ lookup('file', 'files/class-as3-keys.json') }}"
+      run_once: true    
+    - set_fact: "class_adc_keys={{ lookup('file', 'files/class-adc-keys.json') }}"
+      run_once: true
+
+    ## Find n-number tenant files
+    - name: Find Tenant .JSON files
+      find:
+        paths: "files/"
+        patterns: 'tenant*'
+        recurse: no
+      register: findOutput    
+      run_once: true
+
+    ## Read and decode all tenant JSON files
+    - name: Read and decode all tenant JSON files      
+      slurp:        
+        src: "{{ item.path }}"      
+      loop: "{{ findOutput.files }}"      
+      register: json_contents
+      run_once: true
+
+    ## Set empty JSON document
+    - set_fact: 
+        combined_json: {}
+      run_once: true
+    
+    ## Combine n-number tenant JSON files with the empty JSON document 
+    - name: Combine JSON files
+      set_fact:
+        combined_json: "{{ combined_json | combine((item.content | b64decode | from_json), recursive=True) }}"
+      loop: "{{ json_contents.results }}"
+      run_once: true
+
+    ## Combine all class ADC keys with combined tenant JSON files    
+    - set_fact: 
+        all_adc_keys: "{{ class_adc_keys | combine(combined_json, recursive=True)  }}"
+      run_once: true
+
+    ## Combine all class AS3 keys with class ADC keys    
+    - set_fact: 
+        all_as3_keys: "{{ class_as3_keys | combine({'declaration': all_adc_keys})  }}"
+      run_once: true
+
+    ## Create reconstructed AS3 .JSON file   
+    - ansible.builtin.copy:
+        content: "{{ all_as3_keys | to_nice_json }}"
+        dest: "files/declaration.json"
+      run_once: true
+
+    ## Part 2: Post reconstituted AS3 JSON to F5 VEs
+
+    - name: POST AS3 declaration to F5 VE
+      uri:
+        url: "https://{{ hostvars[inventory_hostname].bigip_mgmt }}:{{ port | default('443')}}/mgmt/shared/appsvcs/declare"
+        user: "{{ provider.user }}"
+        password: "{{ f5adminpassword }}"
+        validate_certs: false
+        force_basic_auth: yes
+        method: POST
+        timeout: 180
+        body_format: json
+        body: "{{ all_as3_keys }}"
+        return_content: yes
+        status_code: [ 200, 202]
+      register: as3id
+
+    - name: Get async task status (skipped if AS3 task completed)
+      uri:
+        url: "https://{{ hostvars[inventory_hostname].bigip_mgmt }}:{{ port | default('443')}}/mgmt/shared/appsvcs/task/{{ as3id.json.id }}"
+        user: "{{ provider.user }}"
+        password: "{{ f5adminpassword }}"
+        validate_certs: false
+        force_basic_auth: yes
+        method: GET
+        return_content: yes
+        status_code: 200
+      register: patchtaskstatus
+      until: patchtaskstatus.json.results[0].message == 'success'
+      retries: 60 # retry X times  
+      delay: 2 # pause for X sec b/w each call
+      when:  as3id.status == 202

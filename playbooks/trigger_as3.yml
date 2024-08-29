@@ -1,0 +1,93 @@
+---
+- name: Proccess AS3 from incoming trigger
+  hosts: bigip
+  connection: local
+  vars:
+    provider:
+      server: "{{ hostvars[inventory_hostname].bigip_mgmt }}"
+      user: admin
+      password: "{{ f5adminpassword }}"
+      validate_certs: false
+      server_port: 443
+  gather_facts: false
+  any_errors_fatal: true
+## Overview:
+## Part 1: Save incoming AS3 declaration to github repository
+## Part 2: Post original JSON to F5 VEs 
+  tasks:
+    ##Part 1: Save incoming AS3 declaration to github repository
+
+#    - name: clone git repo
+#      shell: git clone git@github.com:megamattzilla/concord-as3-import.git
+    # - name: Debug List Files
+    #   ansible.builtin.shell:
+    #     cmd: "ls -laR ../"
+    #   register: shell 
+
+    # - name: Debug List Files
+    #   debug:
+    #     msg: "{{ shell.stdout_lines }}"           
+
+    - name: Create files directory if it does not exist
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/files"
+        state: directory
+        mode: '0755'
+
+    ## Create Class AS3 .JSON file for top-level keys (not tenant declaration)  
+    - name: Create Class AS3 .JSON file for top-level keys (not tenant declaration)
+      ansible.builtin.copy:
+        content: "{{ as3_declaration | combine({'declaration': None}) | dict2items | selectattr('key', '!=', 'declaration') | items2dict | to_nice_json }}"
+        dest: "{{ playbook_dir }}/files/class-as3-keys.json"
+      run_once: true
+
+    ## Create Class ADC .JSON file for second-level keys (not declaration)  
+    - name: Create Class ADC .JSON file for second-level keys (not declaration)
+      ansible.builtin.copy:
+        content: "{{ as3_declaration.declaration  | dict2items | rejectattr('value', 'search', 'Tenant') | items2dict | to_nice_json }}"
+        dest: "{{ playbook_dir }}/files/class-adc-keys.json"
+      run_once: true
+
+    ## Create AS3 .JSON file for tenants  
+    - name: Create AS3 .JSON file for tenants 
+      ansible.builtin.copy:
+        content: "{{ [item]  | items2dict | to_nice_json }}"
+        dest: "{{ playbook_dir }}/files/tenant-{{ item.key }}.json"
+      loop: "{{ as3_declaration.declaration | dict2items | selectattr('value', 'search', 'Tenant')  }}"
+      loop_control:        
+        label: "{{ item.key }}"
+      run_once: true
+
+    ## Part 2: Post original JSON to F5 VEs
+    ## Note: this can be modified later to POST the reconstructed JSON from github if needed. See update_as3.yml playbook for that code.  
+
+    - name: POST AS3 declaration to F5 VE
+      uri:
+        url: "https://{{ hostvars[inventory_hostname].bigip_mgmt }}:{{ port | default('443')}}/mgmt/shared/appsvcs/declare"
+        user: "{{ provider.user }}"
+        password: "{{ f5adminpassword }}"
+        validate_certs: false
+        force_basic_auth: yes
+        method: POST
+        timeout: 180
+        body_format: json
+        body: "{{ as3_declaration  }}"
+        return_content: yes
+        status_code: [ 200, 202]
+      register: as3id
+
+    - name: Get async task status (skipped if AS3 task completed)
+      uri:
+        url: "https://{{ hostvars[inventory_hostname].bigip_mgmt }}:{{ port | default('443')}}/mgmt/shared/appsvcs/task/{{ as3id.json.id }}"
+        user: "{{ provider.user }}"
+        password: "{{ f5adminpassword }}"
+        validate_certs: false
+        force_basic_auth: yes
+        method: GET
+        return_content: yes
+        status_code: 200
+      register: patchtaskstatus
+      until: patchtaskstatus.json.results[0].message == 'success'
+      retries: 60 # retry X times  
+      delay: 2 # pause for X sec b/w each call
+      when:  as3id.status == 202
