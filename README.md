@@ -2,6 +2,93 @@
 
 ![alt text](2024-08-20_10-06-55.png)
 
+### Features
+
+Parse the AS3 JSON with n-number tenants into n-number JSON files with trigger_as3.yml playbook:
+![alt text](2024-08-29_11-01-26.png)
+Example output using example-AS3.json:
+```bash
+files/
+├── class-adc-keys.json     # All JSON keys at class ADC
+├── class-as3-keys.json     # All JSON keys at class AS3          
+├── tenant-example1.json    # All JSON keys for tenant example1
+├── tenant-example2.json    # All JSON keys for tenant example1
+└── tenant-example3.json    # All JSON keys for tenant example1
+```
+
+Example Contents:
+```
+$ head -5 * 
+==> class-adc-keys.json <==
+{
+    "class": "ADC",
+    "id": "urn:uuid:33045210-3ab8-4636-9b2a-c98d22ab915d",
+    "label": "Sample 1",
+    "remark": "Simple HTTP application with RR pool",
+
+==> class-as3-keys.json <==
+{
+    "action": "deploy",
+    "class": "AS3",
+    "persist": true
+}
+==> tenant-example1.json <==
+{
+    "example1": {
+        "class": "Tenant",
+        "example1": {
+            "class": "Application",
+
+==> tenant-example2.json <==
+{
+    "example2": {
+        "class": "Tenant",
+        "example2": {
+            "class": "Application",
+
+==> tenant-example3.json <==
+{
+    "example3": {
+        "class": "Tenant",
+        "example3": {
+            "class": "Application",
+```
+
+The ansible playbook update_as3.yml can reconstitute the original AS3 JSON payload:
+![alt text](2024-08-29_11-17-44.png)
+
+Example output:
+```bash
+files/
+files/
+├── class-adc-keys.json     # All JSON keys at class ADC
+├── class-as3-keys.json     # All JSON keys at class AS3          
+├── tenant-example1.json    # All JSON keys for tenant example1
+├── tenant-example2.json    # All JSON keys for tenant example1
+├── tenant-example3.json    # All JSON keys for tenant example1
+└── declaration.json        # Reconstituted AS3 JSON payload from all files above 
+```
+Example contents of declaration.json:
+```
+$ jq keys files/declaration.json 
+[
+  "action",
+  "class",
+  "declaration",
+  "persist"
+]
+
+$ jq '.declaration | keys[]' files/declaration.jso
+n 
+"class"
+"example1"
+"example2"
+"example3"
+"id"
+"label"
+"remark"
+"schemaVersion"
+```
 
 ### Example calling Concord Proccess with AS3 payload
 

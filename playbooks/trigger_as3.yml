@@ -15,24 +15,19 @@
 ## Part 1: Save incoming AS3 declaration to github repository
 ## Part 2: Post original JSON to F5 VEs 
   tasks:
-    ##Part 1: Save incoming AS3 declaration to github repository
-
-#    - name: clone git repo
-#      shell: git clone git@github.com:megamattzilla/concord-as3-import.git
-    # - name: Debug List Files
-    #   ansible.builtin.shell:
-    #     cmd: "ls -laR ../"
-    #   register: shell 
-
-    # - name: Debug List Files
-    #   debug:
-    #     msg: "{{ shell.stdout_lines }}"           
+    ##Part 1: Save incoming AS3 declaration to files       
 
     - name: Create files directory if it does not exist
       ansible.builtin.file:
         path: "{{ playbook_dir }}/files"
         state: directory
         mode: '0755'
+
+    ## Load AS3 JSON from file if this playbook is being ran outside of concord flow  
+    - name: Load example AS3 JSON from file if this playbook is being ran outside of concord flow
+      set_fact: "as3_declaration={{ lookup('file', 'example-AS3.json') }}"
+      run_once: true
+      when: as3_declaration is not defined
 
     ## Create Class AS3 .JSON file for top-level keys (not tenant declaration)  
     - name: Create Class AS3 .JSON file for top-level keys (not tenant declaration)

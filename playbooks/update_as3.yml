@@ -21,9 +21,11 @@
 #      shell: git clone git@github.com:megamattzilla/concord-as3-import.git
   
     ## Lookup json keys for class AS3 and ADC  
-    - set_fact: "class_as3_keys={{ lookup('file', 'files/class-as3-keys.json') }}"
+    - name: Lookup json keys for class AS3
+      set_fact: "class_as3_keys={{ lookup('file', 'files/class-as3-keys.json') }}"
       run_once: true    
-    - set_fact: "class_adc_keys={{ lookup('file', 'files/class-adc-keys.json') }}"
+    - name: Lookup json keys for class ADC
+      set_fact: "class_adc_keys={{ lookup('file', 'files/class-adc-keys.json') }}"
       run_once: true
 
     ## Find n-number tenant files
@@ -39,7 +41,9 @@
     - name: Read and decode all tenant JSON files      
       slurp:        
         src: "{{ item.path }}"      
-      loop: "{{ findOutput.files }}"      
+      loop: "{{ findOutput.files }}"
+      loop_control:
+        label: "{{item.path}}"      
       register: json_contents
       run_once: true
 
@@ -53,6 +57,8 @@
       set_fact:
         combined_json: "{{ combined_json | combine((item.content | b64decode | from_json), recursive=True) }}"
       loop: "{{ json_contents.results }}"
+      loop_control:
+        label: "{{item.source}}"
       run_once: true
 
     ## Combine all class ADC keys with combined tenant JSON files    
@@ -66,7 +72,8 @@
       run_once: true
 
     ## Create reconstructed AS3 .JSON file   
-    - ansible.builtin.copy:
+    - name: Create reconstructed AS3 .JSON file
+      ansible.builtin.copy:
         content: "{{ all_as3_keys | to_nice_json }}"
         dest: "files/declaration.json"
       run_once: true
